@@ -3,6 +3,8 @@ plugins {
     kotlin("android") version "2.1.0"
 }
 
+group = "com.honeynotify"
+
 android {
     namespace = "com.honeynotify"
     compileSdk = 35
