@@ -92,7 +92,7 @@ class HoneyNotify(private val context: Context, private val baseUrl: String, pri
     }
 
     fun track(event: String, notificationId: String? = null, metadata: Map<String, String> = emptyMap()) {
-        val standardEvents = setOf("received", "opened", "clicked", "dismissed")
+        val standardEvents = setOf("received", "confirmed_delivered", "opened", "clicked", "dismissed")
         val payload = JSONObject().put("event_type", if (event in standardEvents) event else "custom").put("occurred_at", Instant.now().toString()).put("metadata", JSONObject(metadata))
         if (event !in standardEvents) payload.put("event_name", event)
         notificationId?.let { payload.put("notification_id", it) }
