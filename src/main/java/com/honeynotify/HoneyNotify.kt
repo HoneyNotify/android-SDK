@@ -1,5 +1,7 @@
 package com.honeynotify
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
 import com.google.firebase.messaging.FirebaseMessaging
@@ -11,6 +13,45 @@ import java.util.Locale
 import java.util.TimeZone
 
 class HoneyNotify(private val context: Context, private val baseUrl: String, private val clientKey: String) {
+    fun createNotificationChannels(labels: HoneyNotifyChannelLabels = HoneyNotifyChannelLabels()) {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val channels = listOf(
+            NotificationChannel(
+                HoneyNotifyChannels.PASSIVE,
+                labels.passive,
+                HoneyNotifyChannels.importanceFor(HoneyNotifyInterruptionLevel.PASSIVE)
+            ).apply {
+                description = labels.passiveDescription
+                enableVibration(false)
+                setSound(null, null)
+            },
+            NotificationChannel(
+                HoneyNotifyChannels.ACTIVE,
+                labels.active,
+                HoneyNotifyChannels.importanceFor(HoneyNotifyInterruptionLevel.ACTIVE)
+            ).apply {
+                description = labels.activeDescription
+            },
+            NotificationChannel(
+                HoneyNotifyChannels.TIME_SENSITIVE,
+                labels.timeSensitive,
+                HoneyNotifyChannels.importanceFor(HoneyNotifyInterruptionLevel.TIME_SENSITIVE)
+            ).apply {
+                description = labels.timeSensitiveDescription
+                enableVibration(true)
+            },
+            NotificationChannel(
+                HoneyNotifyChannels.CRITICAL,
+                labels.critical,
+                HoneyNotifyChannels.importanceFor(HoneyNotifyInterruptionLevel.CRITICAL)
+            ).apply {
+                description = labels.criticalDescription
+                enableVibration(true)
+            }
+        )
+        manager.createNotificationChannels(channels)
+    }
+
     fun register(token: String, externalUserId: String? = null, tags: Map<String, String> = emptyMap(), identityToken: String? = null): String {
         val payload = JSONObject().put("platform", "android").put("push_token", token).put("tags", JSONObject(tags))
         externalUserId?.let { payload.put("external_user_id", it) }
@@ -74,12 +115,7 @@ class HoneyNotify(private val context: Context, private val baseUrl: String, pri
         Thread { completion(runCatching { track(event, notificationId, metadata) }) }.start()
     }
 
-    fun notificationFrom(data: Map<String, String>) = HoneyNotifyNotification(
-        id = data["honeynotify_notification_id"],
-        clickUrl = data["honeynotify_click_url"],
-        imageUrl = data["honeynotify_image_url"],
-        data = data
-    )
+    fun notificationFrom(data: Map<String, String>) = HoneyNotifyNotification.from(data)
 
     fun trackReceived(data: Map<String, String>) = track("received", notificationFrom(data).id)
 
@@ -115,7 +151,72 @@ class HoneyNotify(private val context: Context, private val baseUrl: String, pri
     private fun errorMessage(body: String): String = runCatching { JSONObject(body).getJSONObject("error").getString("message") }.getOrDefault("Request failed")
 }
 
-data class HoneyNotifyNotification(val id: String?, val clickUrl: String?, val imageUrl: String?, val data: Map<String, String>)
+enum class HoneyNotifyInterruptionLevel(val wireValue: String) {
+    PASSIVE("passive"),
+    ACTIVE("active"),
+    TIME_SENSITIVE("time_sensitive"),
+    CRITICAL("critical");
+
+    companion object {
+        fun fromWireValue(value: String?): HoneyNotifyInterruptionLevel =
+            entries.firstOrNull { it.wireValue == value } ?: ACTIVE
+    }
+}
+
+object HoneyNotifyChannels {
+    const val PASSIVE = "honeynotify_passive"
+    const val ACTIVE = "honeynotify_active"
+    const val TIME_SENSITIVE = "honeynotify_time_sensitive"
+    const val CRITICAL = "honeynotify_critical"
+
+    fun forLevel(level: HoneyNotifyInterruptionLevel): String = when (level) {
+        HoneyNotifyInterruptionLevel.PASSIVE -> PASSIVE
+        HoneyNotifyInterruptionLevel.ACTIVE -> ACTIVE
+        HoneyNotifyInterruptionLevel.TIME_SENSITIVE -> TIME_SENSITIVE
+        HoneyNotifyInterruptionLevel.CRITICAL -> CRITICAL
+    }
+
+    fun importanceFor(level: HoneyNotifyInterruptionLevel): Int = when (level) {
+        HoneyNotifyInterruptionLevel.PASSIVE -> NotificationManager.IMPORTANCE_LOW
+        HoneyNotifyInterruptionLevel.ACTIVE -> NotificationManager.IMPORTANCE_DEFAULT
+        HoneyNotifyInterruptionLevel.TIME_SENSITIVE,
+        HoneyNotifyInterruptionLevel.CRITICAL -> NotificationManager.IMPORTANCE_HIGH
+    }
+}
+
+data class HoneyNotifyChannelLabels(
+    val passive: String = "Quiet notifications",
+    val active: String = "Notifications",
+    val timeSensitive: String = "Time-sensitive notifications",
+    val critical: String = "Critical notifications",
+    val passiveDescription: String = "Notifications delivered without sound",
+    val activeDescription: String = "Standard notifications",
+    val timeSensitiveDescription: String = "Urgent notifications requiring timely attention",
+    val criticalDescription: String = "Highest-priority urgent notifications; device settings still apply"
+)
+
+data class HoneyNotifyNotification(
+    val id: String?,
+    val clickUrl: String?,
+    val imageUrl: String?,
+    val interruptionLevel: HoneyNotifyInterruptionLevel,
+    val channelId: String,
+    val data: Map<String, String>
+) {
+    companion object {
+        fun from(data: Map<String, String>): HoneyNotifyNotification {
+            val level = HoneyNotifyInterruptionLevel.fromWireValue(data["honeynotify_interruption_level"])
+            return HoneyNotifyNotification(
+                id = data["honeynotify_notification_id"],
+                clickUrl = data["honeynotify_click_url"],
+                imageUrl = data["honeynotify_image_url"],
+                interruptionLevel = level,
+                channelId = data["honeynotify_android_channel_id"] ?: HoneyNotifyChannels.forLevel(level),
+                data = data
+            )
+        }
+    }
+}
 
 class HoneyNotifyException(val status: Int, message: String) : RuntimeException("$message ($status)") {
     constructor(message: String) : this(0, message)

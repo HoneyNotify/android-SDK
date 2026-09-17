@@ -2,8 +2,6 @@
 
 The HoneyNotify Android SDK registers FCM devices, maintains user identity and tags across token refreshes, parses notification payloads, and reports notification lifecycle events.
 
-The canonical source lives in [`sdks/android`](https://github.com/charlesbradber/HoneyNotify/tree/main/sdks/android). Changes merged there are tested and mirrored automatically to this repository.
-
 ## Requirements
 
 - Android API 26 or later
@@ -26,6 +24,9 @@ val honeyNotify = HoneyNotify(
     clientKey = "ps_public_your_key"
 )
 
+// Call during foreground app startup, before level-specific notifications arrive.
+honeyNotify.createNotificationChannels()
+
 honeyNotify.registerCurrentToken(
     externalUserId = "customer-123",
     tags = mapOf("plan" to "pro")
@@ -43,6 +44,8 @@ override fun onNewToken(token: String) {
 ```
 
 Use `identify` after login, `logout` on sign-out, and `track` from notification handlers. When verified identity is enabled, obtain the ES256 identity token from your backend and pass it to `register` or `identify`.
+
+HoneyNotify creates stable passive, active, time-sensitive, and critical channel IDs. Parsed notifications expose `interruptionLevel` and `channelId` for foreground rendering. Apps can provide localized `HoneyNotifyChannelLabels`; channel importance is fixed when Android first creates a channel, after which the user controls its sound and importance. Android Critical uses a high-importance urgent channel and high-priority FCM. It does not request full-screen intent or Do Not Disturb access and cannot guarantee bypassing user settings.
 
 Network methods are synchronous; call them off the main thread or use the provided asynchronous helpers.
 
